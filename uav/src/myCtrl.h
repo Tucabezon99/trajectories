@@ -1,5 +1,5 @@
-#ifndef MYCTRL_H
-#define MYCTRL_H
+#ifndef nuevo_H
+#define nuevo_H
 
 #include <Object.h>
 #include <ControlLaw.h>
@@ -51,4 +51,4 @@ namespace flair {
     }
 }
 
-#endif // MYCTRL_H
+#endif // nuevo_H

@@ -1,5 +1,5 @@
 //  created:    2025/03/02
-//  filename:   customCtrl.cpp
+//  filename:   trajectories.cpp
 //
 //  author:     ateveraz
 //
@@ -10,7 +10,7 @@
 //
 /*********************************************************************/
 
-#include "customCtrl.h"
+#include "trajectories.h"
 #include <TargetController.h>
 #include <Uav.h>
 #include <GridLayout.h>
@@ -41,7 +41,7 @@ using namespace flair::sensor;
 using namespace flair::filter;
 using namespace flair::meta;
 
-customCtrl::customCtrl(TargetController *controller): UavStateMachine(controller), behaviourMode(BehaviourMode_t::Default), vrpnLost(false), controlMode_t(ControlMode_t::Default) {
+trajectories::trajectories(TargetController *controller): UavStateMachine(controller), behaviourMode(BehaviourMode_t::Default), vrpnLost(false), controlMode_t(ControlMode_t::Default) {
     Uav* uav=GetUav();
 
     VrpnClient* vrpnclient=new VrpnClient("vrpn", uav->GetDefaultVrpnAddress(),80,uav->GetDefaultVrpnConnectionType());
@@ -86,6 +86,7 @@ customCtrl::customCtrl(TargetController *controller): UavStateMachine(controller
     task_selection->AddItem("Hovering at zero");
     task_selection->AddItem("Regulation task");
     task_selection->AddItem("Circle tracking");
+    task_selection->AddItem("Straight line");
 
     desired_position = new Vector3DSpinBox(task_selection_box->NewRow(), "Desired position", -3, 3, 0.1, 3);
     desired_yaw = new DoubleSpinBox(task_selection_box->LastRowLastCol(), "Desired yaw", -M_PI, M_PI, 0.1, 3);
@@ -104,22 +105,22 @@ customCtrl::customCtrl(TargetController *controller): UavStateMachine(controller
 
     // Custom control law
     Tab *setup_custom_controller = new Tab(getFrameworkManager()->GetTabWidget(),"Custom controller");
-    myCtrl = new MyController(setup_custom_controller->At(0,0),"Parameters");
+    nuevo = new MyController(setup_custom_controller->At(0,0),"Parameters");
 
     customReferenceOrientation= new AhrsData(this,"reference");
     uav->GetAhrs()->AddPlot(customReferenceOrientation,DataPlot::Yellow);
     AddDataToControlLawLog(customReferenceOrientation);
     AddDeviceToControlLawLog(uX);
     AddDeviceToControlLawLog(uY);
-    AddDeviceToControlLawLog(myCtrl);
+    AddDeviceToControlLawLog(nuevo);
 
     customOrientation=new AhrsData(this,"orientation");
 }
 
-customCtrl::~customCtrl() {
+trajectories::~trajectories() {
 }
 
-void customCtrl::ComputeCustomTorques(Euler &torques)
+void trajectories::ComputeCustomTorques(Euler &torques)
 {
     // Implement your custom control law here or call a controller class. 
     ComputeDefaultTorques(torques);
@@ -130,19 +131,19 @@ void customCtrl::ComputeCustomTorques(Euler &torques)
     {
         case 1:
             controlMode_t = ControlMode_t::Custom;
-            computeMyCtrl(torques);
+            computenuevo(torques);
             ComputeCustomThrust();
             break;
 
         default:
             controlMode_t = ControlMode_t::Default;
-            Thread::Warn("customCtrl: default control law started. Check custom torque definition. \n");
+            Thread::Warn("trajectories: default control law started. Check custom torque definition. \n");
             EnterFailSafeMode();
             break;
     }
 }
 
-void customCtrl::computeMyCtrl(Euler &torques)
+void trajectories::computenuevo(Euler &torques)
 {
     // Get position, velocity and quaternion from the VRPN object in its coordinate system
     Vector3Df uav_pos, uav_vel; 
@@ -167,7 +168,13 @@ void customCtrl::computeMyCtrl(Euler &torques)
     Vector2Df pos_error2D, vel_error2D;
     // Example of desired altitude [m] => (ALWAYS A POSITIVE VALUE) 
     // Because the AltitudeValues function returns a positive value also. However, the UAV's altitude is negative in the VRPN coordinate system.
-    float altittude_desired = desired_position->Value().z; 
+    float altittude_desired = desired_position->Value().z;
+    if (behaviourMode == BehaviourMode_t::StraightLine) {
+        altittude_desired = lineAltitude; //Makes StraightLine use the altitude captured at point A
+    } 
+    else if (behaviourMode == BehaviourMode_t::PositionHold) {
+        altittude_desired = altitudeHold;
+    }
     float yaw_ref;
     float z, dz;
     AltitudeValues(z, dz);
@@ -177,20 +184,20 @@ void customCtrl::computeMyCtrl(Euler &torques)
     Vector3Df vel_error = Vector3Df(vel_error2D.x, vel_error2D.y, dz);
 
     // Set the values of the custom controller and update it
-    myCtrl->SetValues(pos_error, vel_error, mixQuaternion, currentAngularSpeed, yaw_ref);
-    myCtrl->Update(GetTime());
+    nuevo->SetValues(pos_error, vel_error, mixQuaternion, currentAngularSpeed, yaw_ref);
+    nuevo->Update(GetTime());
 
     // Apply the computed torques and thrust
-    torques.roll = myCtrl->Output(0);
-    torques.pitch = myCtrl->Output(1);
-    torques.yaw = myCtrl->Output(2);
-    thrust = myCtrl->Output(3); 
+    torques.roll = nuevo->Output(0);
+    torques.pitch = nuevo->Output(1);
+    torques.yaw = nuevo->Output(2);
+    thrust = nuevo->Output(3); 
     // If you prefer, you can also use the ComputeDefaultThrust() function. E.g.:
     // thrust = ComputeDefaultThrust();
     // The desired take-off altitude will be used as a reference. 
 }
 
-float customCtrl::ComputeCustomThrust(void)
+float trajectories::ComputeCustomThrust(void)
 {
     // Implement your custom thrust computation here or asign its value from another function, because it is a global variable.
     if (thrust == 0)
@@ -202,59 +209,59 @@ float customCtrl::ComputeCustomThrust(void)
     return thrust;
 }
 
-void customCtrl::StartCustomTorques(void)
+void trajectories::StartCustomTorques(void)
 {
     if (control_selection->CurrentIndex() == 0)
     {
         StartDefaultTorques();
         Start_task();
-        Thread::Info("customCtrl: default control law started\n");
+        Thread::Info("trajectories: default control law started\n");
     }
     else
     {
         if(SetTorqueMode(TorqueMode_t::Custom) && SetThrustMode(ThrustMode_t::Custom) && control_selection->CurrentIndex() != 0)
         {
             controlMode_t = ControlMode_t::Custom;
-            myCtrl->Reset();
+            nuevo->Reset();
             Start_task();
-            Thread::Info("customCtrl: custom control law started\n");
+            Thread::Info("trajectories: custom control law started\n");
         }
         else
         {
             StopCustomTorques();
-            Thread::Err("customCtrl: could not start custom control law\n");
+            Thread::Err("trajectories: could not start custom control law\n");
         }
     }
     
 }
 
-void customCtrl::StopCustomTorques(void)
+void trajectories::StopCustomTorques(void)
 {
     StartDefaultTorques();
     controlMode_t = ControlMode_t::Default;
-    Thread::Info("customCtrl: custom control law stopped\n");
+    Thread::Info("trajectories: custom control law stopped\n");
 }
 
-void customCtrl::StartDefaultTorques(void)
+void trajectories::StartDefaultTorques(void)
 {
     if (controlMode_t == ControlMode_t::Default)
     {
-        Thread::Warn("customCtrl: already in default control law\n");
+        Thread::Warn("trajectories: already in default control law\n");
         return;
     }
 
     if(SetTorqueMode(TorqueMode_t::Default) && SetThrustMode(ThrustMode_t::Default) )
     {
         controlMode_t = ControlMode_t::Default;
-        Thread::Info("customCtrl: default control law started\n");
+        Thread::Info("trajectories: default control law started\n");
     }
     else
     {
-        Thread::Err("customCtrl: could not start default control law\n");
+        Thread::Err("trajectories: could not start default control law\n");
     }
 }
 
-const AhrsData *customCtrl::GetOrientation(void) const {
+const AhrsData *trajectories::GetOrientation(void) const {
     //get yaw from vrpn
     Quaternion vrpnQuaternion;
     uavVrpn->GetQuaternion(vrpnQuaternion);
@@ -274,8 +281,8 @@ const AhrsData *customCtrl::GetOrientation(void) const {
     return customOrientation;
 }
 
-void customCtrl::AltitudeValues(float &z,float &dz) const{
-    Vector3Df uav_pos,uav_vel;
+void trajectories::AltitudeValues(float &z,float &dz) const{ //'&' allow you to update values from inside the function and still be called outside 
+    Vector3Df uav_pos,uav_vel; //Local variables
 
     uavVrpn->GetPosition(uav_pos);
     uavVrpn->GetSpeed(uav_vel);
@@ -284,7 +291,7 @@ void customCtrl::AltitudeValues(float &z,float &dz) const{
     dz=-uav_vel.z;
 }
 
-AhrsData *customCtrl::GetReferenceOrientation(void) {
+AhrsData *trajectories::GetReferenceOrientation(void) { //Attitude and Heading Reference System
     Vector2Df pos_err, vel_err; // in Uav coordinate system
     float yaw_ref;
     Euler refAngles;
@@ -306,12 +313,12 @@ AhrsData *customCtrl::GetReferenceOrientation(void) {
     return customReferenceOrientation;
 }
 
-void customCtrl::PositionValues(Vector2Df &pos_error,Vector2Df &vel_error,float &yaw_ref) {
+void trajectories::PositionValues(Vector2Df &pos_error,Vector2Df &vel_error,float &yaw_ref) {
     Vector3Df uav_pos,uav_vel; // in VRPN coordinate system
     Vector2Df uav_2Dpos,uav_2Dvel; // in VRPN coordinate system
 
-    uavVrpn->GetPosition(uav_pos);
-    uavVrpn->GetSpeed(uav_vel);
+    uavVrpn->GetPosition(uav_pos); //Store current position in uav_pos
+    uavVrpn->GetSpeed(uav_vel); //Store current velocity in uav_vel 
 
     uav_pos.To2Dxy(uav_2Dpos);
     uav_vel.To2Dxy(uav_2Dvel);
@@ -332,6 +339,27 @@ void customCtrl::PositionValues(Vector2Df &pos_error,Vector2Df &vel_error,float 
         vel_error=uav_2Dvel;
         yaw_ref=(float)desired_yaw->Value();
     }
+    else if (behaviourMode == BehaviourMode_t::StraightLine) {
+        double currentTime = static_cast<double>(GetTime()) / 1000000000.0;
+        float elapsed = static_cast<float>(currentTime - lineStartTime); //Records trajectory time
+
+        float s = elapsed / lineDuration; //Fraction of the journey 
+        if (s < 0.0f) s = 0.0f;
+        if (s > 1.0f) s = 1.0f; //Keeps position reference at B point
+
+        float progress = 3.0f * s * s - 2.0f * s * s * s; // Position. How much distance should be covered
+        float speed = lineDistance * 6.0f * s * (1.0f - s) / lineDuration; //Time derivative of the position
+
+        Vector2Df referencePosition( //Desired position in x and y
+            lineStart.x + lineDistance * progress,
+            lineStart.y
+        );
+        Vector2Df referenceVelocity(speed, 0.0f);
+
+        pos_error = uav_2Dpos - referencePosition;
+        vel_error = uav_2Dvel - referenceVelocity;
+        yaw_ref = lineYaw;
+    }
     else { //Circle
         Vector3Df target_pos;
         Vector2Df circle_pos,circle_vel;
@@ -342,9 +370,9 @@ void customCtrl::PositionValues(Vector2Df &pos_error,Vector2Df &vel_error,float 
         circle->SetCenter(target_2Dpos);
 
         //circle reference
-        circle->Update(GetTime());
-        circle->GetPosition(circle_pos);
-        circle->GetSpeed(circle_vel);
+        circle->Update(GetTime()); //provides current time
+        circle->GetPosition(circle_pos); // receives where the drone should be now
+        circle->GetSpeed(circle_vel); //receives how fast and in which direction
 
         //error in optitrack frame
         pos_error=uav_2Dpos-circle_pos;
@@ -360,7 +388,7 @@ void customCtrl::PositionValues(Vector2Df &pos_error,Vector2Df &vel_error,float 
     vel_error.Rotate(-currentAngles.yaw);
 }
 
-void customCtrl::SignalEvent(Event_t event) {
+void trajectories::SignalEvent(Event_t event) {
     UavStateMachine::SignalEvent(event);
     switch(event) {
     case Event_t::TakingOff:
@@ -378,7 +406,7 @@ void customCtrl::SignalEvent(Event_t event) {
     }
 }
 
-void customCtrl::ExtraSecurityCheck(void) {
+void trajectories::ExtraSecurityCheck(void) {
     if ((!vrpnLost) && ((behaviourMode==BehaviourMode_t::Circle) || (behaviourMode==BehaviourMode_t::PositionHold))) {
         if (!targetVrpn->IsTracked(500)) {
             Thread::Err("VRPN, target lost\n");
@@ -393,7 +421,7 @@ void customCtrl::ExtraSecurityCheck(void) {
             Land();
         }
     }
-    if ((!vrpnLost) && ((behaviourMode==BehaviourMode_t::Hover) || (behaviourMode==BehaviourMode_t::Regulation))) {
+    if ((!vrpnLost) && ((behaviourMode==BehaviourMode_t::Hover) || (behaviourMode==BehaviourMode_t::Regulation) || (behaviourMode == BehaviourMode_t::StraightLine))) {
         if (!uavVrpn->IsTracked(500)) {
             Thread::Err("VRPN, uav lost\n");
             vrpnLost=true;
@@ -403,7 +431,7 @@ void customCtrl::ExtraSecurityCheck(void) {
     }
 }
 
-void customCtrl::ExtraCheckPushButton(void) {
+void trajectories::ExtraCheckPushButton(void) {
     if(startCircle->Clicked()) {
         Start_task();
     }
@@ -421,7 +449,7 @@ void customCtrl::ExtraCheckPushButton(void) {
     }
 }
 
-void customCtrl::ExtraCheckJoystick(void) {
+void trajectories::ExtraCheckJoystick(void) {
     /*     Do not use cross, start nor select buttons!!
     0: "start"       1: "select"      2: "square"      3: "triangle"
     4: "circle"      5: "cross";      6: "left 1"      7: "left 2"
@@ -445,26 +473,26 @@ void customCtrl::ExtraCheckJoystick(void) {
     }
 }
 
-void customCtrl::Start_task(void) {
+void trajectories::Start_task(void) { //class::function
     if( behaviourMode==BehaviourMode_t::Circle) {
-        Thread::Warn("customCtrl: already in circle mode\n");
+        Thread::Warn("trajectories: already in circle mode\n");
         return;
     }
     if (SetOrientationMode(OrientationMode_t::Custom)) {
-        Thread::Info("customCtrl: start circle\n");
+        Thread::Info("trajectories: start circle\n");
     } else {
-        Thread::Warn("customCtrl: could not start circle\n");
+        Thread::Warn("trajectories: could not start circle\n");
         return;
     }
 
     // Defining desired task. 
     if (task_selection->CurrentIndex() == 0) {
         behaviourMode=BehaviourMode_t::Hover;
-        Thread::Info("customCtrl: hovering at zero\n");
+        Thread::Info("trajectories: hovering at zero\n");
     }
     else if (task_selection->CurrentIndex() == 1) {
         behaviourMode=BehaviourMode_t::Regulation;
-        Thread::Info("customCtrl: regulation task\n");
+        Thread::Info("trajectories: regulation task\n");
     }
     else if (task_selection->CurrentIndex() == 2) {
         Vector3Df uav_pos,target_pos;
@@ -481,27 +509,50 @@ void customCtrl::Start_task(void) {
         uX->Reset();
         uY->Reset();
         behaviourMode=BehaviourMode_t::Circle;
-        Thread::Info("customCtrl: circle tracking\n");
+        Thread::Info("trajectories: circle tracking\n");
+    }
+    else if (task_selection->CurrentIndex() == 3) { //Index 3 because its position in task_selection
+        Vector3Df currentPosition; // local variable to store drone's x,y,z
+        Quaternion currentQuaternion;
+
+        uavVrpn->GetPosition(currentPosition); // Reads drone's current position from VRPN and stores it in "current Position"
+        uavVrpn->GetQuaternion(currentQuaternion); // Reads the drone orientation. '->' calls a function on the object pointed to
+
+        lineStart = Vector2Df(currentPosition.x, currentPosition.y); //Copies current x and y coordinates
+        lineAltitude = -currentPosition.z; //Store starting attitude. The project uses negative VRPN z
+        lineYaw = currentQuaternion.ToEuler().yaw; //Convert into Euler and assign yaw
+        lineStartTime = static_cast<double>(GetTime()) / 1000000000.0; //GetTime uses nanoseconds
+        //Records when the task starts
+        uX->Reset(); //Start task fresh
+        uY->Reset();
+
+        behaviourMode = BehaviourMode_t::StraightLine; //Changes the flight task to Straight linr
+        Thread::Info("trajectories: straight-line tracking started\n"); //Informational message
     }
     else {
-        Thread::Err("customCtrl: unknown task\n");
+        Thread::Err("trajectories: unknown task\n");
         return;
     }
 }
 
-void customCtrl::StopCircle(void) {
+void trajectories::StopCircle(void) {
+    if (behaviourMode == BehaviourMode_t::StraightLine) {
+        VrpnPositionHold(); //Switches to holding the drone's current position
+        Thread::Info("trajectories: straight line stopped, holding position\n");
+        return;
+    }
     if( behaviourMode!=BehaviourMode_t::Circle) {
-        Thread::Warn("customCtrl: not in circle mode\n");
+        Thread::Warn("trajectories: not in circle mode\n");
         return;
     }
     circle->FinishTraj();
     //GetJoystick()->Rumble(0x70);
-    Thread::Info("customCtrl: finishing circle\n");
+    Thread::Info("trajectories: finishing circle\n");
 }
 
-void customCtrl::VrpnPositionHold(void) {
+void trajectories::VrpnPositionHold(void) {
     if( behaviourMode==BehaviourMode_t::PositionHold) {
-        Thread::Warn("customCtrl: already in vrpn position hold mode\n");
+        Thread::Warn("trajectories: already in vrpn position hold mode\n");
         return;
     }
 	Quaternion vrpnQuaternion;
@@ -511,10 +562,11 @@ void customCtrl::VrpnPositionHold(void) {
     Vector3Df vrpnPosition;
     uavVrpn->GetPosition(vrpnPosition);
     vrpnPosition.To2Dxy(posHold);
+    altitudeHold = -vrpnPosition.z; //Captures current altitude when position hold starts
 
     uX->Reset();
     uY->Reset();
     behaviourMode=BehaviourMode_t::PositionHold;
     SetOrientationMode(OrientationMode_t::Custom);
-    Thread::Info("customCtrl: holding position\n");
+    Thread::Info("trajectories: holding position\n");
 }

@@ -1,5 +1,5 @@
 //  created:    2025/03/02
-//  filename:   customCtrl.h
+//  filename:   trajectories.h
 //
 //  author:     ateveraz
 //
@@ -10,8 +10,8 @@
 //
 /*********************************************************************/
 
-#ifndef CUSTOMCTRL_H
-#define CUSTOMCTRL_H
+#ifndef trajectories_H
+#define trajectories_H
 
 #include <UavStateMachine.h>
 #include "myCtrl.h"
@@ -37,10 +37,10 @@ namespace flair {
     }
 }
 
-class customCtrl : public flair::meta::UavStateMachine {
+class trajectories : public flair::meta::UavStateMachine {
     public:
-        customCtrl(flair::sensor::TargetController *controller);
-        ~customCtrl();
+        trajectories(flair::sensor::TargetController *controller);
+        ~trajectories();
 
     private:
 
@@ -49,7 +49,8 @@ class customCtrl : public flair::meta::UavStateMachine {
             PositionHold,
             Circle, 
             Regulation, 
-            Hover
+            Hover,
+            StraightLine
         };
 
     enum class ControlMode_t {
@@ -77,14 +78,24 @@ class customCtrl : public flair::meta::UavStateMachine {
         void StartCustomTorques(void);
         void StopCustomTorques(void);
         void StartDefaultTorques(void);
-        void computeMyCtrl(flair::core::Euler &torques);
+        void computenuevo(flair::core::Euler &torques);
 
         flair::filter::Pid *uX, *uY;
-        flair::filter::MyController *myCtrl;
+        flair::filter::MyController *nuevo;
 
         flair::core::Vector2Df posHold;
         float yawHold;
         float thrust;
+        float altitudeHold = 0.0f; //Store altitude for position hold
+
+        // Straight-line trajectory
+        flair::core::Vector2Df lineStart; // "flair" is the library, "core" is a subfolder of flair, "Vector2Df" is the actual tool
+        float lineAltitude = 0.0f; //value to mantain
+        float lineYaw = 0.0f; //value to mantain
+        double lineStartTime = 0.0;
+
+        float lineDistance = 2.0f;  // Displacement along world x [m]
+        float lineDuration = 3.0f; // Time to travel from A to B [s]
 
         flair::gui::PushButton *startCircle,*stopCircle,*positionHold;
         flair::meta::MetaVrpnObject *targetVrpn,*uavVrpn;
@@ -105,4 +116,4 @@ class customCtrl : public flair::meta::UavStateMachine {
         flair::gui::DoubleSpinBox *desired_yaw;
 };
 
-#endif // CUSTOMCTRL_H
+#endif // trajectories_H

@@ -1,4 +1,4 @@
-PROJECT(customCtrl)
+PROJECT(trajectories)
 cmake_minimum_required(VERSION 2.8)
 
 SET(FLAIR_USE_FILTER TRUE)
@@ -10,11 +10,11 @@ include($ENV{FLAIR_ROOT}/flair-src/cmake-modules/GlobalCmakeFlair.cmake)
 
 SET(SRC_FILES
 	src/main.cpp
-	src/customCtrl.cpp
+	src/trajectories.cpp
     src/myCtrl.cpp
 )
 
 FLAIR_DEMO(${PROJECT_NAME} "${SRC_FILES}"
-           DEST_DIR customCtrl
+           DEST_DIR trajectories
            COPY_RESOURCES
 )

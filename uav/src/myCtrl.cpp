@@ -35,8 +35,8 @@ MyController::MyController(const LayoutPosition *position, const string &name)
     delete log_labels;
 
     // GUI for custom controller
-    auto *gui_customCtrl = new GroupBox(position, name);
-    auto *general_parameters = new GroupBox(gui_customCtrl->NewRow(), " ");
+    auto *gui_trajectories = new GroupBox(position, name);
+    auto *general_parameters = new GroupBox(gui_trajectories->NewRow(), " ");
     deltaT_custom = new DoubleSpinBox(general_parameters->NewRow(), "Custom dt [s]", 0, 1, 0.001, 4);
     mass = new DoubleSpinBox(general_parameters->LastRowLastCol(), "Mass [kg]", 0, 10, 0.01, 4, 0.436);
     k_motor = new DoubleSpinBox(general_parameters->LastRowLastCol(), "Motor constant", 0, 50, 0.01, 4, 29.5870);
@@ -45,18 +45,18 @@ MyController::MyController(const LayoutPosition *position, const string &name)
     sat_att = new DoubleSpinBox(general_parameters->LastRowLastCol(), "Saturation att", 0, 10, 0.01, 3);
 
     // Custom cartesian position controller
-    auto *custom_position = new GroupBox(gui_customCtrl->NewRow(), "Custom position controller");
+    auto *custom_position = new GroupBox(gui_trajectories->NewRow(), "Custom position controller");
     Kp_pos = new Vector3DSpinBox(custom_position->LastRowLastCol(), "Kp_pos", 0, 100, 0.1, 3);
     Kd_pos = new Vector3DSpinBox(custom_position->LastRowLastCol(), "Kd_pos", 0, 100, 0.1, 3);
 
 
     // Custom attitude controller
-    auto *custom_attitude = new GroupBox(gui_customCtrl->NewRow(), "Custom attitude controller");
+    auto *custom_attitude = new GroupBox(gui_trajectories->NewRow(), "Custom attitude controller");
     Kp_att = new Vector3DSpinBox(custom_attitude->LastRowLastCol(), "Kp_att", 0, 100, 0.1, 3);
     Kd_att = new Vector3DSpinBox(custom_attitude->LastRowLastCol(), "Kd_att", 0, 100, 0.1, 3);
 
     // Show cartesian errors plot
-    plotCartesianErrors(gui_customCtrl->NewRow());
+    plotCartesianErrors(gui_trajectories->NewRow());
 
     AddDataToLog(state);
 }
