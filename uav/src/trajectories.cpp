@@ -341,7 +341,11 @@ void trajectories::PositionValues(Vector2Df &pos_error,Vector2Df &vel_error,floa
     }
     else if (behaviourMode == BehaviourMode_t::StraightLine) {
         double currentTime = static_cast<double>(GetTime()) / 1000000000.0;
-        float elapsed = static_cast<float>(currentTime - lineStartTime); //Records trajectory time
+        double totalElapsed = currentTime - lineStartTime; //Total seconds the task has been running
+        double cycleDuration = 2.0 * lineDuration; //Duration of one round trip
+        float elapsed = static_cast<float>(
+            std::fmod(totalElapsed, cycleDuration) //Calculates remainder. Tells how far into the current cycle we are
+        ); //Converts the remainder from double to float
 
         bool returning = elapsed >= lineDuration; //True when the travel time has finished
 

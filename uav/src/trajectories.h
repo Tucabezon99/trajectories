@@ -94,8 +94,8 @@ class trajectories : public flair::meta::UavStateMachine {
         float lineYaw = 0.0f; //value to mantain
         double lineStartTime = 0.0;
 
-        float lineDistance = 2.0f;  // Displacement along world x [m]
-        float lineDuration = 5.0f; // Time to travel from A to B [s]
+        float lineDistance = 3.0f;  // Displacement along world x-axis in meters
+        float lineDuration = 5.0f; // Time to travel from A to B in seconds
 
         flair::gui::PushButton *startCircle,*stopCircle,*positionHold;
         flair::meta::MetaVrpnObject *targetVrpn,*uavVrpn;
