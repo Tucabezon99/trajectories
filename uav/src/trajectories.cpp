@@ -343,18 +343,30 @@ void trajectories::PositionValues(Vector2Df &pos_error,Vector2Df &vel_error,floa
         double currentTime = static_cast<double>(GetTime()) / 1000000000.0;
         float elapsed = static_cast<float>(currentTime - lineStartTime); //Records trajectory time
 
-        float s = elapsed / lineDuration; //Fraction of the journey 
+        bool returning = elapsed >= lineDuration; //True when the travel time has finished
+
+        float legElapsed = elapsed;
+        if (returning) {
+            legElapsed = elapsed - lineDuration; //Value of 0 when first leg completed. Start of return
+        }
+
+        float s = legElapsed / lineDuration; //Fraction of the journey 
         if (s < 0.0f) s = 0.0f;
-        if (s > 1.0f) s = 1.0f; //Keeps position reference at B point
+        if (s > 1.0f) s = 1.0f; //Keeps progress fro each leg
 
         float progress = 3.0f * s * s - 2.0f * s * s * s; // Position. How much distance should be covered
         float speed = lineDistance * 6.0f * s * (1.0f - s) / lineDuration; //Time derivative of the position
 
-        Vector2Df referencePosition( //Desired position in x and y
-            lineStart.x + lineDistance * progress,
-            lineStart.y
-        );
-        Vector2Df referenceVelocity(speed, 0.0f);
+        float referenceX = lineStart.x + lineDistance * progress; //Calculates position in x
+        float referenceVx = speed; //We store it to make it negative later
+
+        if (returning) {
+            referenceX = lineStart.x + lineDistance * (1.0f - progress); //Decreases from 1 to 0
+            referenceVx = -speed;
+        }
+
+        Vector2Df referencePosition(referenceX, lineStart.y);
+        Vector2Df referenceVelocity(referenceVx, 0.0f);
 
         pos_error = uav_2Dpos - referencePosition;
         vel_error = uav_2Dvel - referenceVelocity;
