@@ -93,6 +93,9 @@ class trajectories : public flair::meta::UavStateMachine {
         float lineAltitude = 0.0f; //value to mantain
         float lineYaw = 0.0f; //value to mantain
         double lineStartTime = 0.0;
+        float altitudeAmplitude = 0.5f;       // Maximum altitude change in meters
+        float lineAltitudeReference = 0.0f;   // It will store the changing altitude
+        float lineVerticalSpeed = 0.0f;       // It will store vertical velocity (positive upwards)
 
         float lineDistance = 3.0f;  // Displacement along world x-axis in meters
         float lineDuration = 5.0f; // Time to travel from A to B in seconds

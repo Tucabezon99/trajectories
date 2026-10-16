@@ -168,20 +168,34 @@ void trajectories::computenuevo(Euler &torques)
     Vector2Df pos_error2D, vel_error2D;
     // Example of desired altitude [m] => (ALWAYS A POSITIVE VALUE) 
     // Because the AltitudeValues function returns a positive value also. However, the UAV's altitude is negative in the VRPN coordinate system.
+    float yaw_ref;
+    float z, dz;
+
+    AltitudeValues(z, dz);
+    PositionValues(pos_error2D, vel_error2D, yaw_ref);
+
     float altittude_desired = desired_position->Value().z;
+    float verticalSpeedDesired = 0.0f;
+
     if (behaviourMode == BehaviourMode_t::StraightLine) {
-        altittude_desired = lineAltitude; //Makes StraightLine use the altitude captured at point A
-    } 
+        altittude_desired = lineAltitudeReference;
+        verticalSpeedDesired = lineVerticalSpeed;
+    }
     else if (behaviourMode == BehaviourMode_t::PositionHold) {
         altittude_desired = altitudeHold;
     }
-    float yaw_ref;
-    float z, dz;
-    AltitudeValues(z, dz);
-    PositionValues(pos_error2D, vel_error2D, yaw_ref);
-    // Notice that the error definition is current - desired for x,y and z. 
-    Vector3Df pos_error = Vector3Df(pos_error2D.x, pos_error2D.y, z-altittude_desired);
-    Vector3Df vel_error = Vector3Df(vel_error2D.x, vel_error2D.y, dz);
+
+    Vector3Df pos_error(
+        pos_error2D.x,
+        pos_error2D.y,
+        z - altittude_desired
+    );
+
+    Vector3Df vel_error(
+        vel_error2D.x,
+        vel_error2D.y,
+        dz - verticalSpeedDesired
+    );
 
     // Set the values of the custom controller and update it
     nuevo->SetValues(pos_error, vel_error, mixQuaternion, currentAngularSpeed, yaw_ref);
@@ -372,6 +386,19 @@ void trajectories::PositionValues(Vector2Df &pos_error,Vector2Df &vel_error,floa
         Vector2Df referencePosition(referenceX, lineStart.y);
         Vector2Df referenceVelocity(referenceVx, 0.0f);
 
+        float pathProgress = returning ? (1.0f - progress) : progress;//Desired position along te path
+        //if=? , else = : , pathProgress increases from 0 to 1 or decreases from 1 to 0
+        float progressRate = 6.0f * s * (1.0f - s) / lineDuration; //Fractions of the path per second
+        //It's not velocity because it's not multiplied by a distance
+        if (returning) {
+            progressRate = -progressRate;
+        }
+
+        float phase = 2.0f * M_PI * pathProgress;//Converts path progress into the sine wave's angle
+
+        lineAltitudeReference = lineAltitude + altitudeAmplitude * std::sin(phase); //Altitude formula
+        lineVerticalSpeed = altitudeAmplitude * 2.0f * M_PI * std::cos(phase) * progressRate; //Differentiate the altitude formula with respect to time
+
         pos_error = uav_2Dpos - referencePosition;
         vel_error = uav_2Dvel - referenceVelocity;
         yaw_ref = lineYaw;
@@ -536,6 +563,8 @@ void trajectories::Start_task(void) { //class::function
 
         lineStart = Vector2Df(currentPosition.x, currentPosition.y); //Copies current x and y coordinates
         lineAltitude = -currentPosition.z; //Store starting attitude. The project uses negative VRPN z
+        lineAltitudeReference = lineAltitude; 
+        lineVerticalSpeed = 0.0f; //Initial desired vertical speed
         lineYaw = currentQuaternion.ToEuler().yaw; //Convert into Euler and assign yaw
         lineStartTime = static_cast<double>(GetTime()) / 1000000000.0; //GetTime uses nanoseconds
         //Records when the task starts
