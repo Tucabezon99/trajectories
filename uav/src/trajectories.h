@@ -50,7 +50,8 @@ class trajectories : public flair::meta::UavStateMachine {
             Circle, 
             Regulation, 
             Hover,
-            StraightLine
+            StraightLine,
+            Spiral
         };
 
     enum class ControlMode_t {
@@ -88,7 +89,7 @@ class trajectories : public flair::meta::UavStateMachine {
         float thrust;
         float altitudeHold = 0.0f; //Store altitude for position hold
 
-        // Straight-line trajectory
+        // Straight-line sinusoidal trajectory
         flair::core::Vector2Df lineStart; // "flair" is the library, "core" is a subfolder of flair, "Vector2Df" is the actual tool
         float lineAltitude = 0.0f; //value to mantain
         float lineYaw = 0.0f; //value to mantain
@@ -99,6 +100,15 @@ class trajectories : public flair::meta::UavStateMachine {
 
         float lineDistance = 3.0f;  // Displacement along world x-axis in meters
         float lineDuration = 5.0f; // Time to travel from A to B in seconds
+
+        // Spiral trajectory
+        float spiralStartAltitude = 0.0f;
+        float spiralHeight = 0.5f;
+        float spiralDuration = 20.0f;
+        double spiralStartTime = 0.0;
+
+        float spiralAltitudeReference = 0.0f; //Stores the changing altitude
+        float spiralVerticalSpeed = 0.0f;
 
         flair::gui::PushButton *startCircle,*stopCircle,*positionHold;
         flair::meta::MetaVrpnObject *targetVrpn,*uavVrpn;

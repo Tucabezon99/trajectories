@@ -87,6 +87,7 @@ trajectories::trajectories(TargetController *controller): UavStateMachine(contro
     task_selection->AddItem("Regulation task");
     task_selection->AddItem("Circle tracking");
     task_selection->AddItem("Straight line");
+    task_selection->AddItem("Spiral");
 
     desired_position = new Vector3DSpinBox(task_selection_box->NewRow(), "Desired position", -3, 3, 0.1, 3);
     desired_yaw = new DoubleSpinBox(task_selection_box->LastRowLastCol(), "Desired yaw", -M_PI, M_PI, 0.1, 3);
@@ -180,6 +181,10 @@ void trajectories::computenuevo(Euler &torques)
     if (behaviourMode == BehaviourMode_t::StraightLine) {
         altittude_desired = lineAltitudeReference;
         verticalSpeedDesired = lineVerticalSpeed;
+    }
+    else if (behaviourMode == BehaviourMode_t::Spiral) {
+        altittude_desired = spiralAltitudeReference;
+        verticalSpeedDesired = spiralVerticalSpeed;
     }
     else if (behaviourMode == BehaviourMode_t::PositionHold) {
         altittude_desired = altitudeHold;
@@ -327,6 +332,7 @@ AhrsData *trajectories::GetReferenceOrientation(void) { //Attitude and Heading R
     return customReferenceOrientation;
 }
 
+//Here is where we obtain the errors
 void trajectories::PositionValues(Vector2Df &pos_error,Vector2Df &vel_error,float &yaw_ref) {
     Vector3Df uav_pos,uav_vel; // in VRPN coordinate system
     Vector2Df uav_2Dpos,uav_2Dvel; // in VRPN coordinate system
@@ -417,6 +423,28 @@ void trajectories::PositionValues(Vector2Df &pos_error,Vector2Df &vel_error,floa
         circle->GetPosition(circle_pos); // receives where the drone should be now
         circle->GetSpeed(circle_vel); //receives how fast and in which direction
 
+        if (behaviourMode == BehaviourMode_t::Spiral) {
+        double currentTime = static_cast<double>(GetTime()) / 1000000000.0;
+        double totalElapsed = currentTime - spiralStartTime;
+        float elapsed = static_cast<float>(std::fmod(totalElapsed, static_cast<double>(spiralDuration)));
+        //Obtains the reminder so "s" always hcnage sbetween 0 and 1
+        float s = elapsed / spiralDuration;
+        if (s < 0.0f) s = 0.0f;
+        if (s > 1.0f) s = 1.0f;
+
+        float phase = 2.0f * M_PI * s;
+
+        spiralAltitudeReference = spiralStartAltitude
+            + 0.5f * spiralHeight * (1.0f - std::cos(phase));
+
+        spiralVerticalSpeed = spiralHeight * M_PI
+            / spiralDuration * std::sin(phase);
+
+        if (s >= 1.0f) {
+            spiralAltitudeReference = spiralStartAltitude;
+            spiralVerticalSpeed = 0.0f;
+        }
+        }
         //error in optitrack frame
         pos_error=uav_2Dpos-circle_pos;
         vel_error=uav_2Dvel-circle_vel;
@@ -439,8 +467,8 @@ void trajectories::SignalEvent(Event_t event) {
         vrpnLost=false;
         break;
     case Event_t::EnteringControlLoop:
-        if ((behaviourMode==BehaviourMode_t::Circle) && (!circle->IsRunning())) {
-            VrpnPositionHold();
+        if (((behaviourMode == BehaviourMode_t::Circle) || (behaviourMode == BehaviourMode_t::Spiral)) && (!circle->IsRunning())) {
+        VrpnPositionHold();
         }
         break;
     case Event_t::EnteringFailSafeMode:
@@ -450,7 +478,7 @@ void trajectories::SignalEvent(Event_t event) {
 }
 
 void trajectories::ExtraSecurityCheck(void) {
-    if ((!vrpnLost) && ((behaviourMode==BehaviourMode_t::Circle) || (behaviourMode==BehaviourMode_t::PositionHold))) {
+    if ((!vrpnLost) && ((behaviourMode == BehaviourMode_t::Circle) || (behaviourMode == BehaviourMode_t::PositionHold) || (behaviourMode == BehaviourMode_t::Spiral))) {
         if (!targetVrpn->IsTracked(500)) {
             Thread::Err("VRPN, target lost\n");
             vrpnLost=true;
@@ -574,6 +602,31 @@ void trajectories::Start_task(void) { //class::function
         behaviourMode = BehaviourMode_t::StraightLine; //Changes the flight task to Straight linr
         Thread::Info("trajectories: straight-line tracking started\n"); //Informational message
     }
+    else if (task_selection->CurrentIndex() == 4) {
+        Vector3Df currentPosition, targetPosition;
+        Vector2Df currentPositionXY, targetPositionXY; //The circle  works in the horizontal plane
+
+        targetVrpn->GetPosition(targetPosition);
+        targetPosition.To2Dxy(targetPositionXY); //The ".To2Dxy" takes only the x and y values
+        circle->SetCenter(targetPositionXY);
+
+        uavVrpn->GetPosition(currentPosition);
+        currentPosition.To2Dxy(currentPositionXY);
+
+        spiralStartAltitude = -currentPosition.z;
+        spiralAltitudeReference = spiralStartAltitude;
+        spiralVerticalSpeed = 0.0f;
+        spiralStartTime = static_cast<double>(GetTime()) / 1000000000.0; //Records the time when the task starts
+
+        circle->StartTraj(currentPositionXY);
+        //Passes the drone’s current horizontal position as its starting-position input
+
+        uX->Reset(); //Clears the PID controller's previous internal state
+        uY->Reset();
+
+        behaviourMode = BehaviourMode_t::Spiral;
+        Thread::Info("trajectories: spiral tracking started\n");
+    }
     else {
         Thread::Err("trajectories: unknown task\n");
         return;
@@ -586,7 +639,7 @@ void trajectories::StopCircle(void) {
         Thread::Info("trajectories: straight line stopped, holding position\n");
         return;
     }
-    if( behaviourMode!=BehaviourMode_t::Circle) {
+    if ((behaviourMode != BehaviourMode_t::Circle) && (behaviourMode != BehaviourMode_t::Spiral)) {
         Thread::Warn("trajectories: not in circle mode\n");
         return;
     }
